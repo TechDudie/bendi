@@ -3,6 +3,20 @@
     "name": "Bendi",
     "version": "1.0.0",
     "description": "Agentically automated CK-12 completer (for mental health purposes only)",
+    "permissions": [
+        "activeTab",
+        "storage"
+    ],
+    "host_permissions": [
+        "https://*.ck12.org/*",
+        "https://ai.hackclub.com/*"
+    ],
+    "content_scripts": [
+        {
+            "matches": ["https://*.ck12.org/*"],
+            "js": ["dist/content.js"]
+        }
+    ],
     "action": {
         "default_popup": "popup.html"
     }
