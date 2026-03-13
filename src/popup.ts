@@ -1,3 +1,8 @@
+// this is the popup script
+// and it's gonna talk to the frontend settings ui
+// and it's gonna tell the content script if the extension is enabled
+// and it's gonna tell the background script what the api key is
+
 document.addEventListener("DOMContentLoaded", () => {
     // get the settings elements
     const enabledSwitch = document.getElementById("enabled") as HTMLInputElement | null;
