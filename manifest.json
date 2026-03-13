@@ -11,6 +11,9 @@
         "https://*.ck12.org/*",
         "https://ai.hackclub.com/*"
     ],
+    "content_security_policy": {
+        "extension_pages": "script-src 'self'; object-src 'self'; font-src https://fonts.gstatic.com; style-src https://fonts.googleapis.com 'self' 'unsafe-inline';"
+    },
     "content_scripts": [
         {
             "matches": ["https://*.ck12.org/*"],

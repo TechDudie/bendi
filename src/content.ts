@@ -34,7 +34,7 @@ if (window.location.href.indexOf("/assessment/ui/") !== -1) {
     // we are on a CK-12 assignment page
     // time to get to work
 
-    while (true) {
+    // while (true) {
         document.querySelector(".question_Container");
-    }
+    // }
 }
