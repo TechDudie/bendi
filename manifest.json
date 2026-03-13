@@ -1,0 +1,9 @@
+{
+    "manifest_version": 3,
+    "name": "Bendi",
+    "version": "1.0.0",
+    "description": "Agentically automated CK-12 completer (for mental health purposes only)",
+    "action": {
+        "default_popup": "popup.html"
+    }
+}
