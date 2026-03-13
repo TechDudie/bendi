@@ -1,0 +1,18 @@
+{
+  "name": "bendi",
+  "version": "1.0.0",
+  "description": "agentically automated CK-12 completer (for mental health purposes only)",
+  "keywords": [
+    "ai"
+  ],
+  "license": "MIT",
+  "author": "TechnoDot",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
