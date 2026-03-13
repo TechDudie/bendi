@@ -1,0 +1,8 @@
+{
+    "compilerOptions": {
+        "module": "esnext",
+        "strict": true,
+        "removeComments": true,
+        "outDir": "./dist"
+    }
+}
