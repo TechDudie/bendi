@@ -18,11 +18,9 @@ interface BackgroundResponse {
 
 let extensionEnabled = true;
 let inFlightQuestionHTML: string | null = null;
-let lastRequestedQuestionHTML = "";
+let lastQuestionHTML = "";
 let lastRequestAt = 0;
 let updateInProgress = false;
-
-const RETRY_COOLDOWN_MS = 900;
 
 chrome.storage.local.get(["extensionEnabled"], (result) => {
     if (result.extensionEnabled !== undefined) {
@@ -68,10 +66,12 @@ function clickButtonText(candidates: string[]): boolean {
 }
 
 function cycleProgressionButtons() {
-    if (clickButtonText(["Very confident"])) return;
-    if (clickButtonText(["Done"])) return;
-    if (clickButtonText(["Check It", "Submit", "Turn In"])) return;
-    if (clickButtonText(["Try Again", "Next", "Continue", "Got It"])) return;
+    // clickButtonText(["Very confident", "Done", "Check It", "Submit", "Turn In", "Try Again", "Next", "Continue", "Got It"])
+
+    if (clickButtonText(["Very confident"])) return; // skips the initial finish confidence prompt
+    if (clickButtonText(["Done"])) return; // should exit the assignment, the button in the top right
+    if (clickButtonText(["Check It", "Submit", "Turn In"])) return; // should initially a given answer
+    if (clickButtonText(["Try Again", "Next", "Continue", "Got It"])) return; // should then proceed to the next question if right and try again if wrong
 }
 
 async function executeAnswer(response: AnswerResponse) {
@@ -116,9 +116,29 @@ function proceedToAssessment() {
     // check if ts extension is even enabled rq
     if (!extensionEnabled) return;
 
+    // we need to check if we JUST came BACK from the assessment page, are we done?
+    let completionPercent = document.querySelector(".ScoreChartComponent__psign") as HTMLElement | null;
+    if (completionPercent) {
+        const text = completionPercent.textContent ?? "";
+        const percent = parseInt(text.replace("%", "").trim());
+        if (percent >= 100) {
+            // again, find all buttons
+            const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("button"));
+
+            // can we find the assignment turn in button?
+            const match = buttons.find((button) => {
+                const text = (button.textContent ?? "").trim().toLowerCase();
+                return text.includes("turn in") && !text.includes("again"); // turn it in ONCE
+            });
+    
+            if (match) match.click();
+
+            return;
+        }
+    }
+
     // we want to go to the assessment page
     // the buttons might be null tho
-
     let startPracticeButton = document.querySelector('[data-dx-desc="start_practice_button"]') as HTMLElement;
     let keepPracticingButton = document.querySelector('[data-dx-desc="Keep practicing"]') as HTMLElement;
 
@@ -146,18 +166,18 @@ async function updateQuestionNode() {
         if (!thisQuestionNode) return;
 
         const thisQuestionHTML = thisQuestionNode.outerHTML;
-        const hasQuestionText = thisQuestionHTML.indexOf("x-ck12-question_text") !== -1;
+        const hasQuestionText = thisQuestionHTML.includes("x-ck12-question_text"); // make sure that we're not just getting a blank element
         if (!hasQuestionText) return;
 
         if (inFlightQuestionHTML) return;
 
         const now = Date.now();
-        const sameQuestionAsLastRequest = thisQuestionHTML === lastRequestedQuestionHTML;
-        const cooldownActive = sameQuestionAsLastRequest && now - lastRequestAt < RETRY_COOLDOWN_MS;
+        const didQuestionChange = thisQuestionHTML === lastQuestionHTML;
+        const cooldownActive = didQuestionChange && now - lastRequestAt < 67; // 67 ms grace period in between each ACTIVE state check
         if (cooldownActive) return;
 
         inFlightQuestionHTML = thisQuestionHTML;
-        lastRequestedQuestionHTML = thisQuestionHTML;
+        lastQuestionHTML = thisQuestionHTML;
         lastRequestAt = now;
         log("question request started");
 
@@ -198,15 +218,23 @@ async function updateQuestionNode() {
     }
 }
 
-if (window.location.href.indexOf("/cbook/") !== -1) {
-    // we are on a CK-12 lesson page
-    // try to proceed reasonably fast to the assessment page
-    setInterval(proceedToAssessment, 67);
+// if (window.location.href.indexOf("/cbook/") !== -1) {
+//     // we are on a CK-12 lesson page
+//     // try to proceed reasonably fast to the assessment page
+//     setInterval(proceedToAssessment, 67);
+// }
+
+// if (window.location.href.indexOf("/assessment/ui/") !== -1) {
+//     // we are on a CK-12 assignment page
+//     // time to get to work
+
+//     setInterval(updateQuestionNode, 67);
+// }
+
+// main loop
+async function run() {
+    if (window.location.href.includes("/cbook/")) proceedToAssessment();
+    if (window.location.href.includes("/assessment/ui/")) updateQuestionNode();
 }
 
-if (window.location.href.indexOf("/assessment/ui/") !== -1) {
-    // we are on a CK-12 assignment page
-    // time to get to work
-
-    setInterval(updateQuestionNode, 67);
-}
+setInterval(run, 67);

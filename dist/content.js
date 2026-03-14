@@ -1,10 +1,9 @@
 "use strict";
 let extensionEnabled = true;
 let inFlightQuestionHTML = null;
-let lastRequestedQuestionHTML = "";
+let lastQuestionHTML = "";
 let lastRequestAt = 0;
 let updateInProgress = false;
-const RETRY_COOLDOWN_MS = 900;
 chrome.storage.local.get(["extensionEnabled"], (result) => {
     if (result.extensionEnabled !== undefined) {
         extensionEnabled = Boolean(result.extensionEnabled);
@@ -80,8 +79,25 @@ async function executeAnswer(response) {
     }
 }
 function proceedToAssessment() {
+    var _a;
     if (!extensionEnabled)
         return;
+    let completionPercent = document.querySelector(".ScoreChartComponent__psign");
+    if (completionPercent) {
+        const text = (_a = completionPercent.textContent) !== null && _a !== void 0 ? _a : "";
+        const percent = parseInt(text.replace("%", "").trim());
+        if (percent >= 100) {
+            const buttons = Array.from(document.querySelectorAll("button"));
+            const match = buttons.find((button) => {
+                var _a;
+                const text = ((_a = button.textContent) !== null && _a !== void 0 ? _a : "").trim().toLowerCase();
+                return text.includes("turn in") && !text.includes("again");
+            });
+            if (match)
+                match.click();
+            return;
+        }
+    }
     let startPracticeButton = document.querySelector('[data-dx-desc="start_practice_button"]');
     let keepPracticingButton = document.querySelector('[data-dx-desc="Keep practicing"]');
     if (startPracticeButton) {
@@ -107,18 +123,18 @@ async function updateQuestionNode() {
         if (!thisQuestionNode)
             return;
         const thisQuestionHTML = thisQuestionNode.outerHTML;
-        const hasQuestionText = thisQuestionHTML.indexOf("x-ck12-question_text") !== -1;
+        const hasQuestionText = thisQuestionHTML.includes("x-ck12-question_text");
         if (!hasQuestionText)
             return;
         if (inFlightQuestionHTML)
             return;
         const now = Date.now();
-        const sameQuestionAsLastRequest = thisQuestionHTML === lastRequestedQuestionHTML;
-        const cooldownActive = sameQuestionAsLastRequest && now - lastRequestAt < RETRY_COOLDOWN_MS;
+        const didQuestionChange = thisQuestionHTML === lastQuestionHTML;
+        const cooldownActive = didQuestionChange && now - lastRequestAt < 67;
         if (cooldownActive)
             return;
         inFlightQuestionHTML = thisQuestionHTML;
-        lastRequestedQuestionHTML = thisQuestionHTML;
+        lastQuestionHTML = thisQuestionHTML;
         lastRequestAt = now;
         log("question request started");
         const res = await chrome.runtime.sendMessage({
@@ -127,7 +143,7 @@ async function updateQuestionNode() {
         });
         const currentQuestionHTML = (_b = (_a = document.querySelector(".question_Container")) === null || _a === void 0 ? void 0 : _a.outerHTML) !== null && _b !== void 0 ? _b : "";
         if (currentQuestionHTML !== thisQuestionHTML) {
-            log("stale model response ignored (question changed)");
+            log("stale model response ignored");
             return;
         }
         if (!res.success) {
@@ -149,9 +165,10 @@ async function updateQuestionNode() {
         updateInProgress = false;
     }
 }
-if (window.location.href.indexOf("/cbook/") !== -1) {
-    setInterval(proceedToAssessment, 67);
+async function run() {
+    if (window.location.href.includes("/cbook/"))
+        proceedToAssessment();
+    if (window.location.href.includes("/assessment/ui/"))
+        updateQuestionNode();
 }
-if (window.location.href.indexOf("/assessment/ui/") !== -1) {
-    setInterval(updateQuestionNode, 67);
-}
+setInterval(run, 67);
