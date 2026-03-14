@@ -17,15 +17,19 @@ Each interactive element has a "data-dx-elementinfo" attribute with a unique ide
 Return JSON in one of these formats:
 - Click-based (multiple choice, true/false, select-all-that-apply): {"action": "click", "targets": ["summative_test_answer_option-2", "summative_test_answer_option-4"]}
   targets = array of the EXACT data-dx-elementinfo attribute values of the correct answer elements
-- Text input (short response): {"action": "type", "target": "Option-1", "value": "42.0"}
-  target = EXACT data-dx-elementinfo of the input field, value = the answer text
+- Text input (short response): {"action": "type", "responses": [{"target": "Option-1", "value": "42.0"}, {"target": "Option-2", "value": "67.67"}]}
+  responses = array of objects containing the EXACT data-dx-elementinfo of the input fields and their corresponding answers
   Use the exact format, units, and significant figures requested by the question.`;
+
+interface ShortResponse {
+    target: string;
+    value: string;
+}
 
 interface AnswerResponse {
     action: "click" | "type";
     targets?: string[]; // for click-based questions
-    target?: string; // for text input questions
-    value?: string; // for text input questions
+    responses?: ShortResponse[]; // for text input questions
 }
 
 async function consultTheClanker(questionHTML: string): Promise<AnswerResponse> {

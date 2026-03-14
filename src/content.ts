@@ -2,11 +2,15 @@
 // and it's gonna talk to the background script and the popup script
 // and it's gonna do all the CK-12 solving
 
+interface ShortResponse {
+    target: string;
+    value: string;
+}
+
 interface AnswerResponse {
     action: "click" | "type";
     targets?: string[]; // for click-based questions
-    target?: string; // for text input questions
-    value?: string; // for text input questions
+    responses?: ShortResponse[]; // for text input questions
     error?: string; // for errors :(
 }
 
@@ -89,25 +93,26 @@ async function executeAnswer(response: AnswerResponse) {
                 log(`target not found for click: ${target}`);
             }
         }
-    } else if (response.action === "type" && response.value != null) {
-        const target = response.target ?? "Option-1";
-        const input = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(
-            `input[data-dx-elementinfo="${target}"], textarea[data-dx-elementinfo="${target}"]`
-        );
+    } else if (response.action === "type" && response.responses) {
+        for (const { target, value } of response.responses) {
+            const input = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+                `input[data-dx-elementinfo="${target}"], textarea[data-dx-elementinfo="${target}"]`
+            );
 
-        if (input) {
-            // we have to trigger the React onChange handler manually, gemini is the goat
-            const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-            const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+            if (input) {
+                // we have to trigger the React onChange handler manually, gemini is the goat
+                const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+                const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
 
-            if (setter) {
-                setter.call(input, response.value);
-            } else {
-                input.value = response.value;
+                if (setter) {
+                    setter.call(input, value);
+                } else {
+                    input.value = value;
+                }
+
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+                input.dispatchEvent(new Event("change", { bubbles: true }));
             }
-
-            input.dispatchEvent(new Event("input", { bubbles: true }));
-            input.dispatchEvent(new Event("change", { bubbles: true }));
         }
     }
 }

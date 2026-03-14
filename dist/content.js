@@ -47,7 +47,7 @@ function cycleProgressionButtons() {
         return;
 }
 async function executeAnswer(response) {
-    var _a, _b;
+    var _a;
     if (response.error)
         return;
     if (response.action === "click" && response.targets) {
@@ -61,20 +61,21 @@ async function executeAnswer(response) {
             }
         }
     }
-    else if (response.action === "type" && response.value != null) {
-        const target = (_a = response.target) !== null && _a !== void 0 ? _a : "Option-1";
-        const input = document.querySelector(`input[data-dx-elementinfo="${target}"], textarea[data-dx-elementinfo="${target}"]`);
-        if (input) {
-            const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-            const setter = (_b = Object.getOwnPropertyDescriptor(proto, "value")) === null || _b === void 0 ? void 0 : _b.set;
-            if (setter) {
-                setter.call(input, response.value);
+    else if (response.action === "type" && response.responses) {
+        for (const { target, value } of response.responses) {
+            const input = document.querySelector(`input[data-dx-elementinfo="${target}"], textarea[data-dx-elementinfo="${target}"]`);
+            if (input) {
+                const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+                const setter = (_a = Object.getOwnPropertyDescriptor(proto, "value")) === null || _a === void 0 ? void 0 : _a.set;
+                if (setter) {
+                    setter.call(input, value);
+                }
+                else {
+                    input.value = value;
+                }
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+                input.dispatchEvent(new Event("change", { bubbles: true }));
             }
-            else {
-                input.value = response.value;
-            }
-            input.dispatchEvent(new Event("input", { bubbles: true }));
-            input.dispatchEvent(new Event("change", { bubbles: true }));
         }
     }
 }
