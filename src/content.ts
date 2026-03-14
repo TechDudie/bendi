@@ -21,10 +21,13 @@ interface BackgroundResponse {
 }
 
 let extensionEnabled = true;
+let badge: HTMLDivElement | null = null;
+
 let inFlightQuestionHTML: string | null = null;
 let lastQuestionHTML = "";
 let lastRequestAt = 0;
-let updateInProgress = false;
+let lastAskedQuestionKey = "";
+let currentlyUpdating = false;
 
 chrome.storage.local.get(["extensionEnabled"], (result) => {
     if (result.extensionEnabled !== undefined) {
@@ -39,6 +42,15 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+let lastBadgeText = "";
+function setBadge(text: string, color: string) {
+    if (badge && lastBadgeText !== text) {
+        lastBadgeText = text;
+        badge.textContent = `status: ${text}`;
+        badge.style.color = color;
+    }
+}
 
 function log(message: string) {
     console.log(`[bendi] ${message}`);
@@ -56,7 +68,8 @@ function clickButtonText(candidates: string[]): boolean {
         // is our candidate string a subset of the button's content?
         const match = buttons.find((button) => {
             const text = (button.textContent ?? "").trim().toLowerCase();
-            return text.includes(needle);
+            const disabled = button.disabled || button.getAttribute("aria-disabled") === "true";
+            return !disabled && text.includes(needle);
         });
 
         // if it is, click it and bail
@@ -69,13 +82,36 @@ function clickButtonText(candidates: string[]): boolean {
     return false;
 }
 
-function cycleProgressionButtons() {
+function getQuestionKey(questionNode: HTMLElement): string {
+    const labeledRegion = questionNode.querySelector<HTMLElement>('[role="region"][aria-label]');
+    const ariaLabel = labeledRegion?.getAttribute("aria-label")?.trim();
+    if (ariaLabel) return ariaLabel;
+
+    const questionText = questionNode.querySelector("x-ck12-question_text")?.textContent?.trim();
+    if (questionText) return questionText;
+
+    return "";
+}
+
+function cycleProgressionButtons(): "none" | "progressed" | "retry" {
     // clickButtonText(["Very confident", "Done", "Check It", "Submit", "Turn In", "Try Again", "Next", "Continue", "Got It"])
 
-    if (clickButtonText(["Very confident"])) return; // skips the initial finish confidence prompt
-    if (clickButtonText(["Done"])) return; // should exit the assignment, the button in the top right
-    if (clickButtonText(["Check It", "Submit", "Turn In"])) return; // should initially a given answer
-    if (clickButtonText(["Try Again", "Next", "Continue", "Got It"])) return; // should then proceed to the next question if right and try again if wrong
+    if (clickButtonText(["Very confident"])) return "progressed"; // skips the initial finish confidence prompt
+    if (clickButtonText(["Done"])) return "progressed"; // should exit the assignment, the button in the top right
+    if (clickButtonText(["Check It", "Submit", "Turn In"])) return "progressed"; // should initially a given answer
+    if (clickButtonText(["Try Again"])) return "retry"; // wrong answer, so let us ask again after resetting
+    if (clickButtonText(["Next", "Continue", "Got It"])) return "progressed"; // should then proceed to the next question if right
+
+    return "none";
+}
+
+function handleProgressionButtons(): boolean {
+    const progression = cycleProgressionButtons();
+    if (progression === "retry") {
+        lastAskedQuestionKey = ""; // handle retry
+    }
+
+    return progression !== "none";
 }
 
 async function executeAnswer(response: AnswerResponse) {
@@ -119,7 +155,10 @@ async function executeAnswer(response: AnswerResponse) {
 
 function proceedToAssessment() {
     // check if ts extension is even enabled rq
-    if (!extensionEnabled) return;
+    if (!extensionEnabled) {
+        setBadge("disabled", "#64748b");
+        return;
+    }
 
     // we need to check if we JUST came BACK from the assessment page, are we done?
     let completionPercent = document.querySelector(".ScoreChartComponent__psign") as HTMLElement | null;
@@ -137,9 +176,14 @@ function proceedToAssessment() {
             });
     
             if (match) match.click();
+            setBadge("redirecting", "oklch(0.84 0.24 148)");
 
             return;
+        } else {
+            setBadge("idle", "#94a3b8");
         }
+    } else {
+        setBadge("running", "oklch(0.84 0.24 148)");
     }
 
     // we want to go to the assessment page
@@ -158,21 +202,37 @@ function proceedToAssessment() {
 
 async function updateQuestionNode() {
     // check if ts extension is even enabled rq
-    if (!extensionEnabled) return;
+    if (!extensionEnabled) {
+        setBadge("disabled", "#64748b");
+        return;
+    }
 
-    if (updateInProgress) return;
-    updateInProgress = true;
+    if (currentlyUpdating) return;
+    currentlyUpdating = true;
 
     try {
         let thisQuestionNode = document.querySelector(".question_Container") as HTMLElement | null;
 
-        cycleProgressionButtons();
+        if (handleProgressionButtons()) return;
 
-        if (!thisQuestionNode) return;
+        if (!thisQuestionNode) {
+            if (lastBadgeText !== "answering") {
+                setBadge("waiting", "#94a3b8");
+            }
+            return;
+        }
 
         const thisQuestionHTML = thisQuestionNode.outerHTML;
+        const thisQuestionKey = getQuestionKey(thisQuestionNode) || thisQuestionHTML;
         const hasQuestionText = thisQuestionHTML.includes("x-ck12-question_text"); // make sure that we're not just getting a blank element
-        if (!hasQuestionText) return;
+        if (!hasQuestionText) {
+            if (lastBadgeText !== "answering") {
+                setBadge("waiting", "#94a3b8");
+            }
+            return;
+        }
+
+        if (thisQuestionKey === lastAskedQuestionKey) return;
 
         if (inFlightQuestionHTML) return;
 
@@ -186,7 +246,10 @@ async function updateQuestionNode() {
         lastRequestAt = now;
         log("question request started");
 
+        setBadge("thinking", "#d8b4fe");
+
         // consult the clankers!!!
+        console.log(thisQuestionNode.cloneNode(true));
         const res: BackgroundResponse = await chrome.runtime.sendMessage({
             type: "answer",
             questionHTML: thisQuestionHTML
@@ -199,28 +262,81 @@ async function updateQuestionNode() {
             return;
         }
 
+        setBadge("answering", "#7dd3fc");
+        console.log(res);
+
         // error handling
         if (!res.success) {
+            setBadge("error!", "#ef4444");
             log(`background error: ${res.error ?? "unknown error"}`);
             return;
         }
         if (!res.answer) {
+            setBadge("error!", "#ef4444");
             log("background returned success but no answer payload");
             return;
         }
 
-        console.log(res);
-
         // execute the answer
         await executeAnswer(res.answer);
+        lastAskedQuestionKey = thisQuestionKey;
 
-        cycleProgressionButtons();
+        handleProgressionButtons();
         await delay(67);
-        cycleProgressionButtons();
+        handleProgressionButtons();
     } finally {
         inFlightQuestionHTML = null;
-        updateInProgress = false;
+        currentlyUpdating = false;
     }
+}
+
+if (window === window.top) {
+    // add the goat font
+    if (document.head) {
+        if (!document.getElementById("bendi-oxanium-preconnect")) {
+            const preconnectGoogle = document.createElement("link");
+            preconnectGoogle.id = "bendi-oxanium-preconnect";
+            preconnectGoogle.rel = "preconnect";
+            preconnectGoogle.href = "https://fonts.googleapis.com";
+            document.head.appendChild(preconnectGoogle);
+        }
+    
+        if (!document.getElementById("bendi-oxanium-preconnect-gstatic")) {
+            const preconnectGStatic = document.createElement("link");
+            preconnectGStatic.id = "bendi-oxanium-preconnect-gstatic";
+            preconnectGStatic.rel = "preconnect";
+            preconnectGStatic.href = "https://fonts.gstatic.com";
+            preconnectGStatic.crossOrigin = "anonymous";
+            document.head.appendChild(preconnectGStatic);
+        }
+    
+        if (!document.getElementById("bendi-oxanium-stylesheet")) {
+            const stylesheet = document.createElement("link");
+            stylesheet.id = "bendi-oxanium-stylesheet";
+            stylesheet.rel = "stylesheet";
+            stylesheet.href = "https://fonts.googleapis.com/css2?family=Oxanium:wght@200..800&display=swap";
+            document.head.appendChild(stylesheet);
+        }
+    }
+
+    // display ONE badge
+    badge = document.createElement("div");
+    badge.id = "bendi-badge";
+    badge.textContent = "status: idle";
+    Object.assign(badge.style, {
+        position: "fixed",
+        bottom: window.location.href.includes("/cbook/") ? "84px" : "30px",
+        right: "30px",
+        zIndex: "999999",
+        fontFamily: '"Oxanium", sans-serif',
+        
+        color: "#94a3b8",
+        backgroundColor: "#181818",
+        padding: "12px 12px",
+        borderRadius: "8px",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.2)"
+    });
+    document.body.appendChild(badge);
 }
 
 // if (window.location.href.indexOf("/cbook/") !== -1) {
