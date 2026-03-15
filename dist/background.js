@@ -71,7 +71,7 @@ async function consultTheClanker(questionHTML, screenshotBase64) {
     return JSON.parse(cleaned);
 }
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.type === "fetchImageAsDataUrl") {
+    if (request.type === "fetch-image") {
         const imageUrl = typeof request.url === "string" ? request.url : "";
         if (!imageUrl) {
             sendResponse({ success: false, error: "Missing image URL" });

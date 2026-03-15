@@ -215,7 +215,7 @@ async function updateQuestionNode() {
                     return;
                 }
                 const fetchResult = await chrome.runtime.sendMessage({
-                    type: "fetchImageAsDataUrl",
+                    type: "fetch-image",
                     url: normalizedSrc
                 });
                 if (fetchResult.success && fetchResult.dataUrl) {
