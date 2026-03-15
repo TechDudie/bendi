@@ -195,9 +195,95 @@ async function updateQuestionNode() {
         log("question request started");
         setBadge("thinking", "#d8b4fe");
         console.log(thisQuestionNode.cloneNode(true));
+        let base64 = null;
+        if (!!thisQuestionNode.querySelector("img")) {
+            const externalImageDataUrls = new Map();
+            const questionImages = Array.from(thisQuestionNode.querySelectorAll("img"));
+            await Promise.all(questionImages.map(async (image) => {
+                var _a;
+                const rawSrc = image.currentSrc || image.src || "";
+                if (!rawSrc)
+                    return;
+                let normalizedSrc = rawSrc;
+                try {
+                    const srcUrl = new URL(rawSrc, window.location.href);
+                    normalizedSrc = srcUrl.href;
+                    if (srcUrl.origin === window.location.origin)
+                        return;
+                }
+                catch (_b) {
+                    return;
+                }
+                const fetchResult = await chrome.runtime.sendMessage({
+                    type: "fetchImageAsDataUrl",
+                    url: normalizedSrc
+                });
+                if (fetchResult.success && fetchResult.dataUrl) {
+                    externalImageDataUrls.set(normalizedSrc, fetchResult.dataUrl);
+                }
+                else {
+                    log(`image data fetch failed: ${normalizedSrc} (${(_a = fetchResult.error) !== null && _a !== void 0 ? _a : "unknown"})`);
+                }
+            }));
+            try {
+                const canvas = await html2canvas(thisQuestionNode, {
+                    backgroundColor: null,
+                    useCORS: false,
+                    allowTaint: false,
+                    logging: false,
+                    scale: 1,
+                    imageTimeout: 670,
+                    ignoreElements: (element) => {
+                        const tagName = element.tagName;
+                        if (tagName === "SCRIPT" || tagName === "IFRAME")
+                            return true;
+                        if (tagName === "IMG") {
+                            const src = element.currentSrc || element.src || "";
+                            if (!src)
+                                return false;
+                            try {
+                                const srcUrl = new URL(src, window.location.href);
+                                return srcUrl.origin !== window.location.origin && !externalImageDataUrls.has(srcUrl.href);
+                            }
+                            catch (_a) {
+                                return false;
+                            }
+                        }
+                        return false;
+                    },
+                    onclone: (clonedDocument) => {
+                        clonedDocument.querySelectorAll("script, iframe").forEach((node) => node.remove());
+                        const clonedImages = clonedDocument.querySelectorAll(".question_Container img");
+                        clonedImages.forEach((image) => {
+                            const src = image.currentSrc || image.src || "";
+                            if (!src)
+                                return;
+                            try {
+                                const srcUrl = new URL(src, window.location.href);
+                                const dataUrl = externalImageDataUrls.get(srcUrl.href);
+                                if (dataUrl) {
+                                    image.src = dataUrl;
+                                    image.removeAttribute("srcset");
+                                }
+                            }
+                            catch (_a) {
+                                return;
+                            }
+                        });
+                    }
+                });
+                base64 = canvas.toDataURL("image/png");
+                log("question screenshot captured");
+                console.log(base64);
+            }
+            catch (err) {
+                log(`html2canvas capture failed: ${err}`);
+            }
+        }
         const res = await chrome.runtime.sendMessage({
             type: "answer",
-            questionHTML: thisQuestionHTML
+            questionHTML: thisQuestionHTML,
+            screenshotBase64: base64
         });
         const currentQuestionHTML = (_b = (_a = document.querySelector(".question_Container")) === null || _a === void 0 ? void 0 : _a.outerHTML) !== null && _b !== void 0 ? _b : "";
         if (currentQuestionHTML !== thisQuestionHTML) {
@@ -265,7 +351,6 @@ if (window === window.top) {
         backgroundColor: "#181818",
         padding: "12px 12px",
         borderRadius: "8px",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.2)"
     });
     document.body.appendChild(badge);
 }
